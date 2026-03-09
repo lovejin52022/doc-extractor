@@ -6,7 +6,7 @@ import ConfirmDialog from "../../../../components/ui/ConfirmDialog";
 import EmptyState from "../../../../components/ui/EmptyState";
 import LoadingState from "../../../../components/ui/LoadingState";
 import { useToast } from "../../../../components/ui/Toast";
-import { KnowledgeDocumentStatus, getKnowledgeBaseDocuments } from "../../../../lib/knowledge-base-mock";
+import { knowledgeBaseApi, KnowledgeDocumentStatus } from "../../../../lib/api/knowledgeBases";
 
 const PAGE_SIZE = 5;
 
@@ -25,24 +25,52 @@ function getStatusMeta(status: KnowledgeDocumentStatus) {
   return { label: "失败", className: "badge-danger" };
 }
 
-export default function KnowledgeBaseDocumentsPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const { showToast } = useToast();
-  const docs = useMemo(() => getKnowledgeBaseDocuments(id), [id]);
+function formatDate(dateStr: string) {
+  try {
+    return new Date(dateStr).toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return dateStr;
+  }
+}
 
+export default function KnowledgeBaseDocumentsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: kbId } = use(params);
+  const { showToast } = useToast();
+  
+  const [docs, setDocs] = useState<Awaited<ReturnType<typeof knowledgeBaseApi.listDocuments>>["items"]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [openConfirmDelete, setOpenConfirmDelete] = useState(false);
   const [openConfirmReindex, setOpenConfirmReindex] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"all" | KnowledgeDocumentStatus>("all");
   const [keyword, setKeyword] = useState("");
   const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
+
+  async function loadDocuments() {
+    try {
+      setLoading(true);
+      setError("");
+      const result = await knowledgeBaseApi.listDocuments(kbId);
+      setDocs(result.items);
+    } catch (e) {
+      console.error("Failed to load documents:", e);
+      setError("加载文档失败");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    setLoading(true);
-    const timer = setTimeout(() => setLoading(false), 350);
-    return () => clearTimeout(timer);
-  }, [statusFilter, keyword, id]);
+    loadDocuments();
+  }, [kbId]);
 
   const filteredDocs = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
@@ -77,8 +105,34 @@ export default function KnowledgeBaseDocumentsPage({ params }: { params: Promise
     }
   }
 
+  async function handleDelete() {
+    try {
+      await knowledgeBaseApi.deleteDocuments(kbId, selectedIds);
+      showToast(`已删除 ${selectedIds.length} 个文档`, "success");
+      setSelectedIds([]);
+      await loadDocuments();
+    } catch (e) {
+      console.error("Failed to delete documents:", e);
+      showToast("删除失败", "error");
+    }
+    setOpenConfirmDelete(false);
+  }
+
+  async function handleRebuildIndex() {
+    try {
+      await knowledgeBaseApi.rebuildIndex(kbId, selectedIds);
+      showToast(`已提交 ${selectedIds.length} 个文档的重建索引任务`, "success");
+      setSelectedIds([]);
+      await loadDocuments();
+    } catch (e) {
+      console.error("Failed to rebuild index:", e);
+      showToast("重建索引失败", "error");
+    }
+    setOpenConfirmReindex(false);
+  }
+
   function onUploadPlaceholder() {
-    showToast("上传入口为占位：后端文件上传与索引任务尚未接入", "info");
+    showToast("上传功能开发中", "info");
   }
 
   const allInPageSelected = pagedDocs.length > 0 && pagedDocs.every((doc) => selectedIds.includes(doc.id));
@@ -87,7 +141,7 @@ export default function KnowledgeBaseDocumentsPage({ params }: { params: Promise
     <div className="section-gap">
       <div className="between">
         <h2>文档</h2>
-        <button className="btn btn-primary btn-sm" onClick={onUploadPlaceholder}>上传文档（占位）</button>
+        <button className="btn btn-primary btn-sm" onClick={onUploadPlaceholder}>上传文档</button>
       </div>
 
       <div className="kb-filter-grid section-gap">
@@ -116,8 +170,8 @@ export default function KnowledgeBaseDocumentsPage({ params }: { params: Promise
           <button className="btn btn-ghost btn-sm" onClick={toggleSelectAllInPage} disabled={pagedDocs.length === 0}>
             {allInPageSelected ? "取消本页全选" : "本页全选"}
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setOpenConfirmReindex(true)} disabled={selectedIds.length === 0}>批量重建索引（占位）</button>
-          <button className="btn btn-danger btn-sm" onClick={() => setOpenConfirmDelete(true)} disabled={selectedIds.length === 0}>批量删除（占位）</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setOpenConfirmReindex(true)} disabled={selectedIds.length === 0}>批量重建索引</button>
+          <button className="btn btn-danger btn-sm" onClick={() => setOpenConfirmDelete(true)} disabled={selectedIds.length === 0}>批量删除</button>
         </div>
       </div>
 
@@ -130,8 +184,10 @@ export default function KnowledgeBaseDocumentsPage({ params }: { params: Promise
             <div className="skeleton-row" />
           </div>
         </div>
+      ) : error ? (
+        <EmptyState icon="❌" title="加载失败" description={error} />
       ) : filteredDocs.length === 0 ? (
-        <EmptyState icon="📄" title="未找到匹配文档" description="可尝试清空筛选条件，或等待后端文档列表接入。" />
+        <EmptyState icon="📄" title="未找到匹配文档" description="可尝试清空筛选条件，或上传新文档。" />
       ) : (
         <>
           <table className="result-table section-gap">
@@ -153,11 +209,11 @@ export default function KnowledgeBaseDocumentsPage({ params }: { params: Promise
                       <input type="checkbox" checked={selectedIds.includes(doc.id)} onChange={() => toggleSelect(doc.id)} />
                     </td>
                     <td>{doc.filename}</td>
-                    <td>{doc.chunkCount}</td>
+                    <td>{doc.chunk_count}</td>
                     <td>
                       <span className={`status-badge ${statusMeta.className}`}>{statusMeta.label}</span>
                     </td>
-                    <td>{doc.updatedAt}</td>
+                    <td>{formatDate(doc.updated_at)}</td>
                   </tr>
                 );
               })}
@@ -176,24 +232,18 @@ export default function KnowledgeBaseDocumentsPage({ params }: { params: Promise
 
       <ConfirmDialog
         open={openConfirmDelete}
-        message="当前仅前端骨架，批量删除不会真正调用后端。是否继续占位流程？"
-        confirmText="继续"
+        message={`确定要删除选中的 ${selectedIds.length} 个文档吗？此操作不可恢复。`}
+        confirmText="删除"
         onCancel={() => setOpenConfirmDelete(false)}
-        onConfirm={() => {
-          setOpenConfirmDelete(false);
-          showToast("批量删除占位完成（未调用后端）", "success");
-        }}
+        onConfirm={handleDelete}
       />
 
       <ConfirmDialog
         open={openConfirmReindex}
-        message="当前仅前端骨架，重建索引不会真正触发后台任务。是否继续占位流程？"
-        confirmText="继续"
+        message={`确定要重建选中的 ${selectedIds.length} 个文档的索引吗？`}
+        confirmText="重建"
         onCancel={() => setOpenConfirmReindex(false)}
-        onConfirm={() => {
-          setOpenConfirmReindex(false);
-          showToast("批量重建索引占位完成（未调用后端）", "success");
-        }}
+        onConfirm={handleRebuildIndex}
       />
     </div>
   );

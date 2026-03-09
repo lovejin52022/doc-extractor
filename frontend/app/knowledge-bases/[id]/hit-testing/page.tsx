@@ -1,17 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 
 import EmptyState from "../../../../components/ui/EmptyState";
 import LoadingState from "../../../../components/ui/LoadingState";
 import { useToast } from "../../../../components/ui/Toast";
+import { knowledgeBaseApi, HitTestChunk } from "../../../../lib/api/knowledgeBases";
 
-type HitCard = {
-  id: string;
-  chunk: string;
-  source: string;
-  score: number;
-};
+type HitCard = HitTestChunk & { id: string };
 
 type QueryHistoryItem = {
   id: string;
@@ -23,30 +19,8 @@ type QueryHistoryItem = {
 
 const HISTORY_KEY = "doc-extractor-hit-testing-history";
 
-function buildMockResults(query: string, topK: number, threshold: number): HitCard[] {
-  const chunks = [
-    "违约责任通常包含继续履行、赔偿损失、支付违约金等条款，需明确触发条件。",
-    "若涉及供应延迟，可在合同中定义宽限期与分级赔偿规则，以降低履约争议。",
-    "推荐在争议解决章节中明确仲裁机构、适用法律与管辖地，便于后续执行。",
-    "对于长期框架协议，建议单独约定价格调整机制与年度复核流程。",
-    "涉及数据处理时应补充保密条款与数据合规责任边界。",
-  ];
-
-  return chunks
-    .map((chunk, index) => {
-      const score = Number((0.95 - index * 0.12 - Math.random() * 0.08).toFixed(3));
-      return {
-        id: `${Date.now()}-${index}`,
-        chunk: `Query: ${query}\n\n${chunk}`,
-        source: `mock_source_${index + 1}.pdf#p${index + 2}`,
-        score,
-      };
-    })
-    .filter((item) => item.score >= threshold)
-    .slice(0, topK);
-}
-
-export default function HitTestingPage() {
+export default function HitTestingPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: kbId } = use(params);
   const { showToast } = useToast();
   const [query, setQuery] = useState("");
   const [topK, setTopK] = useState("5");
@@ -91,23 +65,40 @@ export default function HitTestingPage() {
 
     setError("");
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 500));
 
-    const nextResults = buildMockResults(normalizedQuery, parsedTopK, parsedThreshold);
-    setResults(nextResults);
-    setActiveCardId(nextResults[0]?.id ?? null);
-    setLoading(false);
+    try {
+      const response = await knowledgeBaseApi.hitTest(kbId, {
+        query: normalizedQuery,
+        top_k: parsedTopK,
+        threshold: parsedThreshold,
+      });
 
-    const newHistoryItem: QueryHistoryItem = {
-      id: `${Date.now()}`,
-      query: normalizedQuery,
-      topK: parsedTopK,
-      scoreThreshold: parsedThreshold,
-      createdAt: new Date().toLocaleString("zh-CN", { hour12: false }),
-    };
-    const nextHistory = [newHistoryItem, ...history].slice(0, 8);
-    persistHistory(nextHistory);
-    showToast("召回测试已刷新（Mock 数据）", "success");
+      // Transform API response to local format
+      const nextResults = response.results.map((item, index) => ({
+        ...item,
+        id: `${Date.now()}-${index}`,
+      }));
+      
+      setResults(nextResults);
+      setActiveCardId(nextResults[0]?.id ?? null);
+
+      const newHistoryItem: QueryHistoryItem = {
+        id: `${Date.now()}`,
+        query: normalizedQuery,
+        topK: parsedTopK,
+        scoreThreshold: parsedThreshold,
+        createdAt: new Date().toLocaleString("zh-CN", { hour12: false }),
+      };
+      const nextHistory = [newHistoryItem, ...history].slice(0, 8);
+      persistHistory(nextHistory);
+      showToast(`召回测试完成，找到 ${nextResults.length} 条结果`, "success");
+    } catch (e) {
+      console.error("Hit test failed:", e);
+      setError("召回测试失败，请稍后重试");
+      showToast("召回测试失败", "error");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function applyHistory(item: QueryHistoryItem) {
@@ -120,7 +111,7 @@ export default function HitTestingPage() {
   return (
     <div className="section-gap">
       <h2>召回测试（Hit Testing）</h2>
-      <p className="muted">输入 Query 并调整参数。当前结果与历史为前端 Mock，用于交互演练。</p>
+      <p className="muted">输入 Query 并调整参数，从知识库中检索相关内容。</p>
 
       <div className="form-grid section-gap">
         <div>
@@ -152,7 +143,7 @@ export default function HitTestingPage() {
         <div className="kb-result-block">
           {loading ? (
             <div>
-              <LoadingState text="模拟召回中..." />
+              <LoadingState text="召回中..." />
               <div className="skeleton-rows">
                 <div className="skeleton-row" />
                 <div className="skeleton-row" />
@@ -186,7 +177,7 @@ export default function HitTestingPage() {
             <button className="btn btn-ghost btn-sm" onClick={() => persistHistory([])} disabled={history.length === 0}>清空</button>
           </div>
           {history.length === 0 ? (
-            <p className="muted section-gap">暂无历史记录（localStorage mock）。</p>
+            <p className="muted section-gap">暂无历史记录。</p>
           ) : (
             <div className="history-list section-gap">
               {history.map((item) => (

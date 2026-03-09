@@ -1,17 +1,47 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { use, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import EmptyState from "../../../components/ui/EmptyState";
 import KnowledgeBaseTabs from "../../../components/KnowledgeBaseTabs";
-import { getKnowledgeBaseById } from "../../../lib/knowledge-base-mock";
+import { knowledgeBaseApi, KnowledgeBaseItem } from "../../../lib/api/knowledgeBases";
 
-export default async function KnowledgeBaseDetailLayout({
+export default function KnowledgeBaseDetailLayout({
   children,
   params,
 }: {
   children: ReactNode;
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  const kb = getKnowledgeBaseById(id);
+  const { id: kbId } = use(params);
+  const router = useRouter();
+  const [kb, setKb] = useState<KnowledgeBaseItem | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await knowledgeBaseApi.get(kbId);
+        setKb(data);
+      } catch (e) {
+        console.error("Failed to load knowledge base:", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [kbId]);
+
+  if (loading) {
+    return (
+      <main className="page-wrap">
+        <section className="panel">
+          <div className="loading-placeholder">加载中...</div>
+        </section>
+      </main>
+    );
+  }
 
   if (!kb) {
     return (
@@ -20,7 +50,7 @@ export default async function KnowledgeBaseDetailLayout({
           <EmptyState
             icon="📚"
             title="知识库不存在"
-            description={`未找到 ID 为 ${id} 的知识库（当前为前端骨架数据）。`}
+            description={`未找到 ID 为 ${kbId} 的知识库`}
             ctaHref="/knowledge-bases"
             ctaText="返回知识库列表"
           />
@@ -36,12 +66,11 @@ export default async function KnowledgeBaseDetailLayout({
         <div className="between">
           <div>
             <h1>{kb.name}</h1>
-            <p className="muted">{kb.description}</p>
+            <p className="muted">{kb.description || "暂无描述"}</p>
           </div>
-          <span className="placeholder-tag">后端未接入</span>
         </div>
 
-        <KnowledgeBaseTabs id={id} />
+        <KnowledgeBaseTabs id={kbId} />
 
         {children}
       </section>

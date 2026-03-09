@@ -7,7 +7,17 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.models.entities import DocumentResponse, TagCreate, TagResponse, TagUpdate
+from app.models.entities import (
+    DocumentResponse,
+    KnowledgeBaseCreate,
+    KnowledgeBaseDocumentCreate,
+    KnowledgeBaseDocumentResponse,
+    KnowledgeBaseResponse,
+    KnowledgeBaseUpdate,
+    TagCreate,
+    TagResponse,
+    TagUpdate,
+)
 from app.models.task import TaskResponse, TaskStatus
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -59,6 +69,24 @@ class SQLiteStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY (doc_id) REFERENCES documents(id)
+                );
+                CREATE TABLE IF NOT EXISTS knowledge_bases (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS kb_documents (
+                    id TEXT PRIMARY KEY,
+                    kb_id TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    content TEXT,
+                    chunk_count INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'queued',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
                 );
                 """
             )
@@ -155,6 +183,124 @@ class SQLiteStore:
             conn.execute("DELETE FROM tasks WHERE doc_id=?", (doc_id,))
             cur = conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
         return cur.rowcount > 0
+
+    # Knowledge Base operations
+    def create_knowledge_base(self, payload: KnowledgeBaseCreate) -> KnowledgeBaseResponse:
+        now = _utc_now()
+        kb = KnowledgeBaseResponse(
+            id=str(uuid4()),
+            name=payload.name,
+            description=payload.description,
+            document_count=0,
+            created_at=now,
+            updated_at=now,
+        )
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO knowledge_bases(id,name,description,created_at,updated_at) VALUES(?,?,?,?,?)",
+                (kb.id, kb.name, kb.description, kb.created_at, kb.updated_at),
+            )
+        return kb
+
+    def list_knowledge_bases(self) -> list[KnowledgeBaseResponse]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM knowledge_bases ORDER BY created_at DESC").fetchall()
+        results = []
+        for row in rows:
+            kb = KnowledgeBaseResponse(**dict(row))
+            # Get document count
+            count_row = conn.execute("SELECT COUNT(*) as cnt FROM kb_documents WHERE kb_id=?", (kb.id,)).fetchone()
+            kb.document_count = count_row["cnt"] if count_row else 0
+            results.append(kb)
+        return results
+
+    def get_knowledge_base(self, kb_id: str) -> KnowledgeBaseResponse | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM knowledge_bases WHERE id=?", (kb_id,)).fetchone()
+        if not row:
+            return None
+        kb = KnowledgeBaseResponse(**dict(row))
+        count_row = conn.execute("SELECT COUNT(*) as cnt FROM kb_documents WHERE kb_id=?", (kb_id,)).fetchone()
+        kb.document_count = count_row["cnt"] if count_row else 0
+        return kb
+
+    def update_knowledge_base(self, kb_id: str, payload: KnowledgeBaseUpdate) -> KnowledgeBaseResponse | None:
+        current = self.get_knowledge_base(kb_id)
+        if not current:
+            return None
+        merged = current.model_copy(update={**payload.model_dump(exclude_unset=True), "updated_at": _utc_now()})
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE knowledge_bases SET name=?,description=?,updated_at=? WHERE id=?",
+                (merged.name, merged.description, merged.updated_at, kb_id),
+            )
+        return merged
+
+    def delete_knowledge_base(self, kb_id: str) -> bool:
+        with self._conn() as conn:
+            conn.execute("DELETE FROM kb_documents WHERE kb_id=?", (kb_id,))
+            cur = conn.execute("DELETE FROM knowledge_bases WHERE id=?", (kb_id,))
+        return cur.rowcount > 0
+
+    # KB Document operations
+    def create_kb_document(self, kb_id: str, payload: KnowledgeBaseDocumentCreate) -> KnowledgeBaseDocumentResponse:
+        now = _utc_now()
+        doc = KnowledgeBaseDocumentResponse(
+            id=str(uuid4()),
+            kb_id=kb_id,
+            filename=payload.filename,
+            chunk_count=0,
+            status="queued",
+            created_at=now,
+            updated_at=now,
+        )
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO kb_documents(id,kb_id,filename,content,chunk_count,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                (doc.id, doc.kb_id, doc.filename, payload.content, doc.chunk_count, doc.status, doc.created_at, doc.updated_at),
+            )
+        return doc
+
+    def list_kb_documents(self, kb_id: str) -> tuple[list[KnowledgeBaseDocumentResponse], int]:
+        with self._conn() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM kb_documents WHERE kb_id=?", (kb_id,)).fetchone()[0]
+            rows = conn.execute("SELECT * FROM kb_documents WHERE kb_id=? ORDER BY created_at DESC", (kb_id,)).fetchall()
+        return [KnowledgeBaseDocumentResponse(**dict(r)) for r in rows], total
+
+    def get_kb_document(self, kb_id: str, doc_id: str) -> KnowledgeBaseDocumentResponse | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM kb_documents WHERE id=? AND kb_id=?", (doc_id, kb_id)).fetchone()
+        return KnowledgeBaseDocumentResponse(**dict(row)) if row else None
+
+    def update_kb_document(self, kb_id: str, doc_id: str, *, chunk_count: int | None = None, status: str | None = None) -> KnowledgeBaseDocumentResponse | None:
+        doc = self.get_kb_document(kb_id, doc_id)
+        if not doc:
+            return None
+        update_data = {"updated_at": _utc_now()}
+        if chunk_count is not None:
+            update_data["chunk_count"] = chunk_count
+        if status is not None:
+            update_data["status"] = status
+        merged = doc.model_copy(update=update_data)
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE kb_documents SET chunk_count=?,status=?,updated_at=? WHERE id=? AND kb_id=?",
+                (merged.chunk_count, merged.status, merged.updated_at, doc_id, kb_id),
+            )
+        return merged
+
+    def delete_kb_documents(self, kb_id: str, doc_ids: list[str]) -> int:
+        if not doc_ids:
+            return 0
+        placeholders = ",".join("?" * len(doc_ids))
+        with self._conn() as conn:
+            cur = conn.execute(f"DELETE FROM kb_documents WHERE kb_id=? AND id IN ({placeholders})", [kb_id, *doc_ids])
+        return cur.rowcount
+
+    def get_kb_document_content(self, kb_id: str, doc_id: str) -> str | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT content FROM kb_documents WHERE id=? AND kb_id=?", (doc_id, kb_id)).fetchone()
+        return row["content"] if row else None
 
 
 import json

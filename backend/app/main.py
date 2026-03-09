@@ -6,6 +6,7 @@ from app.routes.upload import router as upload_router
 from app.routes.extract import router as extract_router
 from app.routes.tags import router as tags_router
 from app.routes.documents import router as documents_router
+from app.routes.knowledgeBases import router as knowledge_bases_router
 
 
 def create_app() -> FastAPI:
@@ -24,6 +25,7 @@ def create_app() -> FastAPI:
     app.include_router(documents_router, prefix="/api", tags=["documents"])
     app.include_router(tags_router, prefix="/api", tags=["tags"])
     app.include_router(extract_router, prefix="/api", tags=["extract"])
+    app.include_router(knowledge_bases_router, prefix="/api", tags=["knowledge-bases"])
     return app
 
 
