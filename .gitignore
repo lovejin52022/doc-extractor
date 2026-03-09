@@ -1,0 +1,22 @@
+﻿
+
+# dependencies
+frontend/node_modules/
+
+# next build
+frontend/.next/
+
+# python
+backend/.venv/
+__pycache__/
+*.pyc
+
+# env
+.env
+*.env
+
+
+# python cache
+**/__pycache__/
+*.pyc
+

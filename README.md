@@ -1,90 +1,101 @@
-# doc-extractor 📄
+# Doc Extractor
 
-高效文档识别&知识库&本地启动，前后端；整合 QAnything、dify 等思想和源码，快速批量可靠提取文档关键信息并导出。
+基于《技术方案》的文档抽取系统，当前已实现：
+- FastAPI 后端：健康检查、文档上传、抽取任务创建与状态查询
+- Next.js 前端：上传页（选文件 + 指定标签）、结果页（轮询任务状态）
+- 内存态任务存储（开发阶段占位，后续替换为数据库）
+- 最小测试覆盖（health + extract 主流程）
 
-## ✨ 特性
+## 目录结构
 
-- 📄 **多格式支持**：支持 PDF 和 Word 文档解析
-- 🏷️ **灵活标签配置**：支持单选、多选、填空三种标签类型
-- 🔍 **高级检索方案**：集成 Multi-Query Retrieval、HyDE、ParentDocumentRetriever、RERANK、ES BM25 等
-- 🤖 **本地化部署**：默认使用 Ollama + LanceDB，完全本地运行
-- 🎯 **结构化输出**：基于用户配置的标签，LLM 返回结构化数据
+```
+backend/
+  app/
+    main.py                 # FastAPI 入口
+    store.py                # 内存态任务存储
+    models/
+      task.py               # Pydantic 数据模型
+    routes/
+      health.py             # GET  /api/health
+      upload.py             # POST /api/upload
+      extract.py            # POST /api/extract  |  GET /api/extract/{task_id}/status
+  tests/
+    test_health.py
+    test_extract.py
+frontend/
+  app/
+    page.tsx                # 首页
+    upload/page.tsx         # 上传 + 创建任务
+    results/page.tsx        # 轮询任务状态 & 展示结果
+storage/
+  uploads/  lancedb/  documents/
+```
 
-## 🏗️ 技术栈
+## 本地运行
 
-- **后端**: Python + FastAPI + LangChain
-- **前端**: Next.js + TypeScript + Tailwind CSS
-- **向量数据库**: LanceDB（默认）
-- **LLM/Embedding**: Ollama（默认，可扩展）
-- **文档解析**: QAnything OCR/PDF 服务
-
-## 🚀 快速启动
-
-### Docker 方式（推荐）
+### 1) 后端
 
 ```bash
-# 一键启动全部服务
-./docker_run.sh --full
+cd backend
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS/Linux
+# source .venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --port 8000
+```
 
-# 或
+### 2) 前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+前端默认监听 `http://localhost:3000`，通过 `next.config.ts` 中的 rewrites 将 `/api/*` 代理到后端 `http://localhost:8000`。
+
+### 3) 一键启动（Windows）
+
+```bash
+start.bat
+```
+
+### 4) Docker
+
+```bash
 docker compose -f docker-compose-win.yaml up
 ```
 
-访问地址：
-- 前端：http://localhost:3001
-- 后端 API：http://localhost:8888
-
-### 本地安装方式
+## 运行测试
 
 ```bash
-# 1. 安装依赖
-./install.sh  # Linux/Mac
-install.bat   # Windows
-
-# 2. 创建虚拟环境并安装后端依赖
 cd backend
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-pip install -r requirements.txt
-
-# 3. 安装前端依赖
-cd frontend
-npm install
-
-# 4. 配置环境变量
-cp backend/.env.example backend/.env
-# 编辑 backend/.env 配置 Ollama 等
-
-# 5. 启动服务
-./start.sh  # Linux/Mac
-start.bat   # Windows
+.venv\Scripts\activate
+python -m pytest tests/ -v
 ```
 
-## 📁 项目结构
+## 当前 API
 
-```
-doc-extractor/
-├── backend/          # Python FastAPI 后端
-│   ├── app/          # FastAPI 应用
-│   ├── core/         # 核心业务逻辑（责任链模式）
-│   ├── services/     # 文档解析、向量化、提取服务
-│   └── models/       # 数据模型
-├── frontend/         # Next.js 前端
-│   ├── app/          # Next.js App Router
-│   └── components/   # React 组件
-├── docker/           # Docker 构建文件
-├── dependent_server/ # QAnything OCR/PDF 服务（内置）
-├── storage/          # 数据存储
-│   ├── lancedb/     # 向量数据库
-│   ├── documents/   # 解析后的文档
-│   └── uploads/     # 上传文件
-└── docs/             # 文档
-```
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/health` | 健康检查 |
+| POST | `/api/upload` | 上传 PDF/DOCX，返回 `{id, filename}` |
+| POST | `/api/extract` | 创建抽取任务，body: `{doc_id, labels[]}`，返回任务详情 |
+| GET | `/api/extract/{task_id}/status` | 查询任务状态与结果 |
+| GET | `/api/extract` | 列出所有任务 |
+| POST | `/api/extract/{task_id}/mock-complete` | 开发占位：模拟任务完成 |
 
-## 📚 系统架构
+## 使用流程
 
-详细架构请参考 [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+1. 打开 `http://localhost:3000/upload`，选择文件并填写抽取标签
+2. 提交后自动跳转到结果页，前端每 3 秒轮询任务状态
+3. 开发阶段可手动调用 `POST /api/extract/{task_id}/mock-complete` 模拟任务完成
 
-## 📄 License
+## 下一步建议
 
-MIT License
+1. 接入 QAnything OCR/PDF 解析服务层（services）
+2. 引入 LanceDB + Embedding 管线
+3. 将内存态 TaskStore 替换为持久化存储
+4. 实现真实的文档解析与标签抽取逻辑
