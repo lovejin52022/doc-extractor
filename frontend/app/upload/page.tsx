@@ -1,101 +1,115 @@
 "use client";
 
-import { useState, useRef, type FormEvent } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
-const API_BASE = "/api";
+import { createExtractTask, listDocuments, listTags, toErrorMessage, uploadDocument, upsertDocument, type DocumentItem, type Tag } from "../../lib/api";
+import { useToast } from "../../components/ui/Toast";
 
 export default function UploadPage() {
   const router = useRouter();
+  const { showToast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [labels, setLabels] = useState("name,date,amount");
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [selectedTagNames, setSelectedTagNames] = useState<string[]>([]);
+  const [selectedDocId, setSelectedDocId] = useState("");
+  const [manualDocId, setManualDocId] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listTags().then((v) => {
+      setTags(v);
+      setSelectedTagNames(v.slice(0, 3).map((x) => x.name));
+    });
+    listDocuments().then(setDocuments);
+  }, []);
+
+  const finalDocId = useMemo(() => manualDocId.trim() || selectedDocId, [manualDocId, selectedDocId]);
+
+  function toggleTag(name: string) {
+    setSelectedTagNames((prev) => prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
+    let docId = finalDocId;
     const file = fileRef.current?.files?.[0];
-    if (!file) {
-      setError("请先选择文件");
-      return;
-    }
 
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const uploadRes = await fetch(`${API_BASE}/upload`, {
-        method: "POST",
-        body: form,
-      });
-      if (!uploadRes.ok) {
-        const detail = await uploadRes.json().catch(() => ({}));
-        throw new Error(detail.detail || "上传失败");
+      if (!docId && file) {
+        const upload = await uploadDocument(file);
+        await upsertDocument(upload);
+        setDocuments(await listDocuments());
+        docId = upload.id;
+        showToast("文件上传成功", "success");
       }
-      const { id: docId } = await uploadRes.json();
 
-      const labelList = labels
-        .split(",")
-        .map((l) => l.trim())
-        .filter(Boolean);
-      const extractRes = await fetch(`${API_BASE}/extract`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ doc_id: docId, labels: labelList }),
-      });
-      if (!extractRes.ok) throw new Error("创建抽取任务失败");
-      const { task_id } = await extractRes.json();
+      if (!docId) throw new Error("请先选择已有文档、填写文档ID，或上传新文件");
+      if (selectedTagNames.length === 0) throw new Error("至少选择一个标签");
 
-      router.push(`/results?task_id=${task_id}`);
+      const task = await createExtractTask(docId, selectedTagNames);
+      showToast("任务已创建", "success");
+      router.push(`/results?task_id=${task.task_id}&doc_id=${docId}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "未知错误");
+      setError(toErrorMessage(err));
     } finally {
       setUploading(false);
     }
   }
 
   return (
-    <main className="mx-auto max-w-xl p-8">
-      <h1 className="text-2xl font-bold">上传文档</h1>
-      <p className="mt-2 text-sm text-gray-500">
-        上传 PDF / DOCX 文件，指定需要抽取的标签后提交。
-      </p>
-
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-        <div>
-          <label className="block text-sm font-medium">文件</label>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf,.docx"
-            className="mt-1 block w-full text-sm file:mr-4 file:rounded file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100"
-          />
+    <main className="page-wrap">
+      <section className="panel">
+        <div className="between">
+          <div>
+            <h1>提取工作台</h1>
+            <p className="muted">支持多标签 + 文档选择（已有文档 / 手动 doc_id / 上传新文档）。</p>
+          </div>
+          <Link href="/documents" className="btn btn-ghost btn-sm">文档总览</Link>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium">抽取标签（逗号分隔）</label>
-          <input
-            type="text"
-            value={labels}
-            onChange={(e) => setLabels(e.target.value)}
-            className="mt-1 block w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            placeholder="name,date,amount"
-          />
-        </div>
+        <form onSubmit={handleSubmit} className="form-grid">
+          <div>
+            <label>选择标签（多选）</label>
+            <div className="chip-group">
+              {tags.map((tag) => (
+                <button type="button" key={tag.id} onClick={() => toggleTag(tag.name)} className={`chip ${selectedTagNames.includes(tag.name) ? "chip-active" : ""}`}>
+                  {tag.name}
+                </button>
+              ))}
+            </div>
+            <p className="hint">已选 {selectedTagNames.length} 个标签</p>
+          </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+          <div>
+            <label>选择已有文档</label>
+            <select className="input" value={selectedDocId} onChange={(e) => setSelectedDocId(e.target.value)}>
+              <option value="">-- 不选择 --</option>
+              {documents.map((doc) => <option key={doc.id} value={doc.id}>{doc.filename} ({doc.id})</option>)}
+            </select>
+          </div>
 
-        <button
-          type="submit"
-          disabled={uploading}
-          className="rounded bg-blue-600 px-6 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {uploading ? "处理中…" : "上传并抽取"}
-        </button>
-      </form>
+          <div>
+            <label>或输入 doc_id（task/doc 关联）</label>
+            <input className="input" value={manualDocId} onChange={(e) => setManualDocId(e.target.value)} placeholder="手动输入文档ID" />
+          </div>
+
+          <div>
+            <label>或上传新文档</label>
+            <input ref={fileRef} type="file" accept=".pdf,.docx" className="input file-input" />
+          </div>
+
+          {error && <p className="error">{error}</p>}
+          <button type="submit" disabled={uploading} className="btn btn-primary">{uploading ? "处理中..." : "创建抽取任务"}</button>
+        </form>
+      </section>
     </main>
   );
 }

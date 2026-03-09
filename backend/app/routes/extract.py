@@ -1,14 +1,20 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from app.models.task import ExtractRequest, TaskResponse, TaskStatus
-from app.store import task_store
+from app.services.extraction_service import extraction_service
+from app.store import document_store, task_store
 
 router = APIRouter()
 
 
 @router.post("/extract", response_model=TaskResponse, status_code=201)
-def create_extract_task(req: ExtractRequest) -> TaskResponse:
+def create_extract_task(req: ExtractRequest, background_tasks: BackgroundTasks) -> TaskResponse:
+    doc = document_store.get(req.doc_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
     task = task_store.create(doc_id=req.doc_id, labels=req.labels)
+    background_tasks.add_task(extraction_service.process_task, task.task_id)
     return task
 
 
@@ -27,16 +33,19 @@ def list_extract_tasks() -> list[TaskResponse]:
 
 @router.post("/extract/{task_id}/mock-complete", response_model=TaskResponse)
 def mock_complete_task(task_id: str) -> TaskResponse:
-    """开发阶段占位：模拟任务完成，便于前端联调。"""
     task = task_store.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
+
     labels = (task.result or {}).get("labels", [])
-    mock_extracted = {label: f"[mock] extracted value for {label}" for label in labels}
     updated = task_store.update_status(
         task_id,
         TaskStatus.COMPLETED,
-        result={"labels": labels, "extracted": mock_extracted},
+        result={
+            "labels": labels,
+            "extracted": {label: f"[mock] extracted value for {label}" for label in labels},
+            "summary": "Mock completed",
+        },
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Task not found")
