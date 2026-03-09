@@ -24,7 +24,7 @@ export default function DocumentsPage() {
     await deleteDocument(pending.id);
     setItems((prev) => prev.filter((x) => x.id !== pending.id));
     setPending(null);
-    showToast("文档已从本地列表删除", "success");
+    showToast("文档已删除", "success");
   }
 
   return (
@@ -33,7 +33,7 @@ export default function DocumentsPage() {
         <div className="between">
           <div>
             <h1>文档总览</h1>
-            <p className="muted">当前删除仅影响前端列表；后端文档删除接口待接入。</p>
+            <p className="muted">文档列表与删除已对接后端 API。</p>
           </div>
           <Link href="/upload" className="btn btn-primary btn-sm">上传新文档</Link>
         </div>

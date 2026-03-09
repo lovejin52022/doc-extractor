@@ -21,11 +21,12 @@ class ExtractionService:
             TaskStatus.PROCESSING,
             result={"labels": labels, "extracted": {}, "summary": "Parsing document..."},
         )
+        document_store.update_document(task.doc_id, status="processing")
 
         # 开发阶段占位：模拟耗时解析
         time.sleep(1.2)
 
-        doc = document_store.get(task.doc_id)
+        doc = document_store.get_document(task.doc_id)
         filename = doc.filename if doc else "unknown"
         extracted = {
             label: f"{label}: extracted from {filename}"
@@ -40,6 +41,7 @@ class ExtractionService:
                 "summary": f"Successfully extracted {len(extracted)} fields",
             },
         )
+        document_store.update_document(task.doc_id, status="extracted")
 
 
 extraction_service = ExtractionService()

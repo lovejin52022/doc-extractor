@@ -24,3 +24,8 @@ __pycache__/
 # IDE
 .idea/
 
+# local runtime data
+storage/doc_extractor.db
+storage/uploads/*.pdf
+storage/uploads/*.docx
+

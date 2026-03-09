@@ -33,7 +33,7 @@ export default function TagsPage() {
         <div className="between">
           <div>
             <h1>标签管理</h1>
-            <p className="muted">当前为本地 mock 数据流，后续可切换后端接口。</p>
+            <p className="muted">优先读取后端接口；后端不可用时会回退到本地缓存。</p>
           </div>
           <Link href="/tags/new" className="btn btn-primary btn-sm">新建标签</Link>
         </div>

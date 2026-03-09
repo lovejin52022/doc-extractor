@@ -1,58 +1,64 @@
 "use client";
 
+import { ApiError, requestJson } from "./core";
 import { getLocal, setLocal } from "./storage";
 import type { Tag } from "./types";
 
-const TAG_KEY = "doc-extractor-tags";
+const TAG_KEY = "doc-extractor-tags-fallback";
 
-const seed: Tag[] = [
-  { id: "tg-name", name: "name", description: "姓名", color: "#2563eb", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "tg-date", name: "date", description: "日期", color: "#7c3aed", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "tg-amount", name: "amount", description: "金额", color: "#ea580c", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-];
+function mapTag(raw: any): Tag {
+  return {
+    id: raw.id,
+    name: raw.name,
+    description: raw.description ?? "",
+    color: raw.color ?? "#2563eb",
+    createdAt: raw.created_at ?? raw.createdAt,
+    updatedAt: raw.updated_at ?? raw.updatedAt,
+  };
+}
 
-function load(): Tag[] {
-  const list = getLocal<Tag[]>(TAG_KEY, []);
-  if (list.length === 0) {
-    setLocal(TAG_KEY, seed);
-    return seed;
-  }
-  return list;
+function loadFallback() {
+  return getLocal<Tag[]>(TAG_KEY, []);
 }
 
 export async function listTags(): Promise<Tag[]> {
-  return load();
+  try {
+    const data = await requestJson<any[]>("/api/tags");
+    const tags = data.map(mapTag);
+    setLocal(TAG_KEY, tags);
+    return tags;
+  } catch {
+    return loadFallback();
+  }
 }
 
 export async function getTag(id: string): Promise<Tag | null> {
-  return load().find((t) => t.id === id) ?? null;
+  const list = await listTags();
+  return list.find((t) => t.id === id) ?? null;
 }
 
 export async function createTag(payload: Pick<Tag, "name" | "description" | "color">): Promise<Tag> {
-  const now = new Date().toISOString();
-  const next: Tag = {
-    id: `tg-${crypto.randomUUID().slice(0, 8)}`,
-    name: payload.name,
-    description: payload.description,
-    color: payload.color || "#2563eb",
-    createdAt: now,
-    updatedAt: now,
-  };
-  const list = [next, ...load()];
-  setLocal(TAG_KEY, list);
-  return next;
+  const created = await requestJson<any>("/api/tags", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return mapTag(created);
 }
 
 export async function updateTag(id: string, payload: Partial<Pick<Tag, "name" | "description" | "color">>): Promise<Tag> {
-  const list = load();
-  const index = list.findIndex((t) => t.id === id);
-  if (index < 0) throw new Error("标签不存在");
-  const updated = { ...list[index], ...payload, updatedAt: new Date().toISOString() };
-  list[index] = updated;
-  setLocal(TAG_KEY, list);
-  return updated;
+  const updated = await requestJson<any>(`/api/tags/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return mapTag(updated);
 }
 
 export async function deleteTag(id: string): Promise<void> {
-  setLocal(TAG_KEY, load().filter((t) => t.id !== id));
+  const res = await fetch(`/api/tags/${id}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) {
+    const msg = res.status >= 500 ? "后端不可用，删除失败" : "删除失败";
+    throw new ApiError(msg, res.status);
+  }
 }

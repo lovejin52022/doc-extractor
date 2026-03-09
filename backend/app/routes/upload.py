@@ -16,12 +16,12 @@ async def upload_document(file: UploadFile = File(...)) -> dict[str, str]:
         raise HTTPException(status_code=400, detail="Only .pdf/.docx files are allowed")
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    doc = document_store.create(filename=file.filename or "unknown", path="")
-    destination = UPLOAD_DIR / f"{doc.doc_id}{suffix}"
+    doc = document_store.create_document(filename=file.filename or "unknown", path="")
+    destination = UPLOAD_DIR / f"{doc.id}{suffix}"
 
     with destination.open("wb") as f:
         content = await file.read()
         f.write(content)
 
-    doc.path = str(destination)
-    return {"id": doc.doc_id, "filename": doc.filename}
+    document_store.update_document(doc.id, path=str(destination))
+    return {"id": doc.id, "filename": doc.filename}

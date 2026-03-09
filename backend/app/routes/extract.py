@@ -9,7 +9,7 @@ router = APIRouter()
 
 @router.post("/extract", response_model=TaskResponse, status_code=201)
 def create_extract_task(req: ExtractRequest, background_tasks: BackgroundTasks) -> TaskResponse:
-    doc = document_store.get(req.doc_id)
+    doc = document_store.get_document(req.doc_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -18,12 +18,17 @@ def create_extract_task(req: ExtractRequest, background_tasks: BackgroundTasks) 
     return task
 
 
-@router.get("/extract/{task_id}/status", response_model=TaskResponse)
+@router.get("/extract/{task_id}", response_model=TaskResponse)
 def get_extract_status(task_id: str) -> TaskResponse:
     task = task_store.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+
+@router.get("/extract/{task_id}/status", response_model=TaskResponse)
+def get_extract_status_compat(task_id: str) -> TaskResponse:
+    return get_extract_status(task_id)
 
 
 @router.get("/extract", response_model=list[TaskResponse])
