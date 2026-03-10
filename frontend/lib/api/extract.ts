@@ -1,6 +1,6 @@
 "use client";
 
-import { requestJson } from "./core";
+import { API_BASE, requestJson } from "./core";
 import { markDocumentStatus } from "./documents";
 import { getLocal, setLocal } from "./storage";
 import type { ExtractTaskMeta, TaskResult } from "./types";
@@ -18,11 +18,11 @@ function saveMeta(value: ExtractTaskMeta[]) {
 export async function uploadDocument(file: File): Promise<{ id: string; filename: string }> {
   const form = new FormData();
   form.append("file", file);
-  return requestJson(`/api/upload`, { method: "POST", body: form });
+  return requestJson(`${API_BASE}/api/upload`, { method: "POST", body: form });
 }
 
 export async function createExtractTask(docId: string, labels: string[]): Promise<TaskResult> {
-  const res = await requestJson<TaskResult>(`/api/extract`, {
+  const res = await requestJson<TaskResult>(`${API_BASE}/api/extract`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ doc_id: docId, labels }),
@@ -35,7 +35,7 @@ export async function createExtractTask(docId: string, labels: string[]): Promis
 }
 
 export async function getTaskStatus(taskId: string): Promise<TaskResult> {
-  const task = await requestJson<TaskResult>(`/api/extract/${taskId}`);
+  const task = await requestJson<TaskResult>(`${API_BASE}/api/extract/${taskId}`);
   if (task.status === "completed") await markDocumentStatus(task.doc_id, "extracted");
   if (task.status === "failed") await markDocumentStatus(task.doc_id, "failed");
   return task;

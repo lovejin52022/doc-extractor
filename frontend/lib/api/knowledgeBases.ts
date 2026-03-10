@@ -1,5 +1,7 @@
 // Knowledge Base API
-import { requestJson } from "./core";
+import { API_BASE, requestJson } from "./core";
+
+const KB_API_BASE = `${API_BASE}/api`;
 
 export interface KnowledgeBaseItem {
   id: string;
@@ -71,15 +73,13 @@ export interface IndexTaskResponse {
   message?: string;
 }
 
-const API_BASE = "/api";
-
 export const knowledgeBaseApi = {
   // List all knowledge bases
-  list: () => requestJson<KnowledgeBaseListResponse>(`${API_BASE}/knowledge-bases`),
+  list: () => requestJson<KnowledgeBaseListResponse>(`${KB_API_BASE}/knowledge-bases`),
 
   // Create a new knowledge base
   create: (data: KnowledgeBaseCreate) =>
-    requestJson<KnowledgeBaseItem>(`${API_BASE}/knowledge-bases`, {
+    requestJson<KnowledgeBaseItem>(`${KB_API_BASE}/knowledge-bases`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -87,11 +87,11 @@ export const knowledgeBaseApi = {
 
   // Get a knowledge base by ID
   get: (id: string) =>
-    requestJson<KnowledgeBaseItem>(`${API_BASE}/knowledge-bases/${id}`),
+    requestJson<KnowledgeBaseItem>(`${KB_API_BASE}/knowledge-bases/${id}`),
 
   // Update a knowledge base
   update: (id: string, data: KnowledgeBaseUpdate) =>
-    requestJson<KnowledgeBaseItem>(`${API_BASE}/knowledge-bases/${id}`, {
+    requestJson<KnowledgeBaseItem>(`${KB_API_BASE}/knowledge-bases/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -99,20 +99,20 @@ export const knowledgeBaseApi = {
 
   // Delete a knowledge base
   delete: (id: string) =>
-    requestJson<void>(`${API_BASE}/knowledge-bases/${id}`, {
+    requestJson<void>(`${KB_API_BASE}/knowledge-bases/${id}`, {
       method: "DELETE",
     }),
 
   // List documents in a knowledge base
   listDocuments: (kbId: string) =>
     requestJson<KnowledgeDocumentListResponse>(
-      `${API_BASE}/knowledge-bases/${kbId}/documents`
+      `${KB_API_BASE}/knowledge-bases/${kbId}/documents`
     ),
 
   // Create a document in a knowledge base
   createDocument: (kbId: string, data: KnowledgeDocumentCreate) =>
     requestJson<KnowledgeDocument>(
-      `${API_BASE}/knowledge-bases/${kbId}/documents`,
+      `${KB_API_BASE}/knowledge-bases/${kbId}/documents`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -123,7 +123,7 @@ export const knowledgeBaseApi = {
   // Delete documents from a knowledge base
   deleteDocuments: (kbId: string, documentIds: string[]) =>
     requestJson<{ deleted: number }>(
-      `${API_BASE}/knowledge-bases/${kbId}/documents/delete`,
+      `${KB_API_BASE}/knowledge-bases/${kbId}/documents/delete`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -134,7 +134,7 @@ export const knowledgeBaseApi = {
   // Rebuild index for a knowledge base
   rebuildIndex: (kbId: string, documentIds?: string[]) =>
     requestJson<IndexTaskResponse>(
-      `${API_BASE}/knowledge-bases/${kbId}/rebuild-index`,
+      `${KB_API_BASE}/knowledge-bases/${kbId}/rebuild-index`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -145,7 +145,7 @@ export const knowledgeBaseApi = {
   // Hit testing - search within a knowledge base
   hitTest: (kbId: string, data: HitTestRequest) =>
     requestJson<HitTestResponse>(
-      `${API_BASE}/knowledge-bases/${kbId}/hit-testing`,
+      `${KB_API_BASE}/knowledge-bases/${kbId}/hit-testing`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

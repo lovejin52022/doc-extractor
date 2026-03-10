@@ -1,3 +1,5 @@
+export const API_BASE = "http://localhost:8000";
+
 export class ApiError extends Error {
   constructor(message: string, public status?: number) {
     super(message);

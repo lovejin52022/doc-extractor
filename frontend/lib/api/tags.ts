@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiError, requestJson } from "./core";
+import { API_BASE, ApiError, requestJson } from "./core";
 import { getLocal, setLocal } from "./storage";
 import type { Tag } from "./types";
 
@@ -23,7 +23,7 @@ function loadFallback() {
 
 export async function listTags(): Promise<Tag[]> {
   try {
-    const data = await requestJson<any[]>("/api/tags");
+    const data = await requestJson<any[]>(`${API_BASE}/api/tags`);
     const tags = data.map(mapTag);
     setLocal(TAG_KEY, tags);
     return tags;
@@ -38,7 +38,7 @@ export async function getTag(id: string): Promise<Tag | null> {
 }
 
 export async function createTag(payload: Pick<Tag, "name" | "description" | "color">): Promise<Tag> {
-  const created = await requestJson<any>("/api/tags", {
+  const created = await requestJson<any>(`${API_BASE}/api/tags`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -47,7 +47,7 @@ export async function createTag(payload: Pick<Tag, "name" | "description" | "col
 }
 
 export async function updateTag(id: string, payload: Partial<Pick<Tag, "name" | "description" | "color">>): Promise<Tag> {
-  const updated = await requestJson<any>(`/api/tags/${id}`, {
+  const updated = await requestJson<any>(`${API_BASE}/api/tags/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -56,7 +56,7 @@ export async function updateTag(id: string, payload: Partial<Pick<Tag, "name" | 
 }
 
 export async function deleteTag(id: string): Promise<void> {
-  const res = await fetch(`/api/tags/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/api/tags/${id}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) {
     const msg = res.status >= 500 ? "后端不可用，删除失败" : "删除失败";
     throw new ApiError(msg, res.status);

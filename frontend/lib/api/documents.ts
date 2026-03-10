@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiError, requestJson } from "./core";
+import { API_BASE, ApiError, requestJson } from "./core";
 import { getLocal, setLocal } from "./storage";
 import type { DocumentItem } from "./types";
 
@@ -29,7 +29,7 @@ export async function listDocuments(params?: { page?: number; pageSize?: number;
   const suffix = q.toString() ? `?${q}` : "";
 
   try {
-    const data = await requestJson<{ items: any[] }>(`/api/documents${suffix}`);
+    const data = await requestJson<{ items: any[] }>(`${API_BASE}/api/documents${suffix}`);
     const docs = data.items.map(mapDoc);
     setLocal(DOC_KEY, docs);
     return docs;
@@ -49,7 +49,7 @@ export async function upsertDocument(doc: { id: string; filename: string }): Pro
 }
 
 export async function deleteDocument(id: string): Promise<void> {
-  const res = await fetch(`/api/documents/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/api/documents/${id}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new ApiError("删除文档失败", res.status);
 }
 
